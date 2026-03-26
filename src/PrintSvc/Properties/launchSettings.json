@@ -1,12 +1,16 @@
-﻿{
+{
   "$schema": "https://json.schemastore.org/launchsettings.json",
   "profiles": {
-    "PrintSvc": {
+    "PrintSvc Debug": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "environmentVariables": {
         "DOTNET_ENVIRONMENT": "Development"
       }
+    },
+    "PrintSvc Release": {
+      "commandName": "Project",
+      "dotnetRunMessages": true
     }
   }
 }

@@ -1,10 +1,12 @@
+using Minio;
 using PrintSvc;
 using PrintSvc.Settings;
+using PrintSvc.Storage;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddHostedService<Worker>();
 #if DEBUG
-builder.Configuration.AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true);
+    builder.Configuration.AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true);
 #else
         builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
 #endif
@@ -17,9 +19,19 @@ builder.Services.Configure<BrokerSettings>(configuration.GetSection("Broker"));
 builder.Services.Configure<StorageSettings>(configuration.GetSection("Storage"));
 builder.Services.Configure<PrintingSettings>(configuration.GetSection("Printing"));
 
+builder.Services.AddSingleton<IPhotoDownloader, PhotoDownloader>();
+
 
 var storageConfig = builder.Configuration.GetSection("Storage").Get<StorageSettings>()
     ?? throw new InvalidOperationException("Storage configuration is required");
+
+
+builder.Services.AddMinio(configureClient => configureClient
+    .WithEndpoint(storageConfig.Endpoint)
+    .WithCredentials(storageConfig.AccessKey, storageConfig.SecretKey)
+    .WithSSL(storageConfig.UseSSL)
+    .Build());
+
 
 
 IHost host = builder.Build();

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using PrintSvc.Contracts;
 using PrintSvc.Settings;
+using PrintSvc.Storage;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -13,17 +14,21 @@ public class Worker : BackgroundService
     private readonly BrokerSettings _broker;
     private readonly StorageSettings _storage;
     private readonly ILogger<Worker> _logger;
+    private readonly IPhotoDownloader _downloader;
 
     private IConnection? _connection;
     private IChannel? _channel;
     public Worker(
         IOptions<BrokerSettings> brokerOptions, 
         IOptions<StorageSettings> storageOptions,
-        ILogger<Worker> logger)
+        ILogger<Worker> logger,
+        IPhotoDownloader downloader)
     {
         _broker = brokerOptions.Value;
         _storage = storageOptions.Value;
         _logger = logger;
+        _downloader = downloader;
+
     }
 
     internal static Jobs? DeserializeJob(string message, ILogger<Worker> logger = null) {
@@ -94,6 +99,8 @@ public class Worker : BackgroundService
         Jobs? job = DeserializeJob(message, _logger);
 
         if (job != null) {
+            await _downloader.DownloadAsync(job.photoStorageKey);
+
             // TODO: Send Job to printer
         }
 

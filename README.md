@@ -53,7 +53,8 @@ Create an `appsettings.local.json` file at the root (not committed):
     "AccessKey": "minioadmin",
     "SecretKey": "minioadmin",
     "Bucket": "photos",
-    "TempDirectory":  "./tmp/"
+    "TempDirectory":  "./tmp/",
+    "UseSSL": false
   },
   "Printing": {
     "PrinterName": ""

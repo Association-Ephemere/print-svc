@@ -26,6 +26,23 @@ public class Worker : BackgroundService
         _logger = logger;
     }
 
+    internal static Jobs? DeserializeJob(string message) {
+        try
+        {
+            Jobs? job = JsonSerializer.Deserialize<Jobs>(message);
+            return job;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        /*if (job != null)
+        {
+            _logger.LogInformation($"Received:\n\t - Job ID: {job.jobId}\n\t - Batch Id: {job.batchId}\n\t - Photo Storage Key: {job.photoStorageKey}\n\t - Copies: {job.copies}");
+        }*/
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var factory = new ConnectionFactory
@@ -46,36 +63,8 @@ public class Worker : BackgroundService
                              arguments: null);
 
         var consumer = new AsyncEventingBasicConsumer(_channel);
-        
-        consumer.ReceivedAsync += async (model, ea) =>
-        {
-            var body = ea.Body.ToArray();
-            var message = Encoding.UTF8.GetString(body);
-            
-            _logger.LogDebug("Raw Message : {Message}", message);
 
-            try 
-            {
-                Jobs? job = JsonSerializer.Deserialize<Jobs>(message);
-
-                if (job != null)
-                {
-                    _logger.LogInformation($"Received:\n\t - Job ID: {job.jobId}\n\t - Batch Id: {job.batchId}\n\t - Photo Storage Key: {job.photoStorageKey}\n\t - Copies: {job.copies}");
-                }
-                await _channel.BasicAckAsync(deliveryTag: ea.DeliveryTag, multiple: false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "An error happened");
-                await _channel.BasicNackAsync(deliveryTag: ea.DeliveryTag, multiple: false, requeue: true);
-
-                throw new NotImplementedException("Not yet implemented");
-                
-                // TODO :
-                // - Retry if printer error
-                // - Do nothing if message malformed
-            }
-        };
+        consumer.ReceivedAsync += Consumer_ReceivedAsync;
 
         await _channel.BasicConsumeAsync(queue: _broker.JobsQueue,
                              autoAck: false,
@@ -87,5 +76,23 @@ public class Worker : BackgroundService
         {
             await Task.Delay(1000, stoppingToken);
         }
+    }
+
+    private async Task Consumer_ReceivedAsync(object sender, BasicDeliverEventArgs @event) {
+        var body = @event.Body.ToArray();
+        var message = Encoding.UTF8.GetString(body);
+
+        _logger.LogDebug("Raw Message : {Message}", message);
+
+#pragma warning disable CS8602 // Déréférencement d'une éventuelle référence null.
+        await _channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
+#pragma warning restore CS8602 // Déréférencement d'une éventuelle référence null.
+
+        Jobs? job = DeserializeJob(message);
+
+        if (job != null) {
+            // TODO: Send Job to printer
+        }
+
     }
 }

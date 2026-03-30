@@ -52,7 +52,8 @@ Create an `appsettings.local.json` file at the root (not committed):
     "Endpoint": "localhost:9000",
     "AccessKey": "minioadmin",
     "SecretKey": "minioadmin",
-    "Bucket": "photos"
+    "Bucket": "photos",
+    "TempDirectory":  "./tmp/"
   },
   "Printing": {
     "PrinterName": ""

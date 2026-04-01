@@ -2,7 +2,10 @@ namespace PrintSvc.Contracts;
 
 public class Results
 {
-    public required string jobId {get; set;}
-    public required string status {get; set;}
-    public required string errorMessage {get; set;}
+    [JsonPropertyName("jobId")]
+    public required string JobId {get; set;}
+    [JsonPropertyName("status")]
+    public required string Status {get; set;}
+    [JsonPropertyName("errorMessage")]
+    public string? ErrorMessage {get; set;}
 }

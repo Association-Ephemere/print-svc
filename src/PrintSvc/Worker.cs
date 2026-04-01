@@ -31,10 +31,10 @@ public class Worker : BackgroundService
 
     }
 
-    internal static Jobs? DeserializeJob(string message, ILogger<Worker> logger = null) {
+    internal static Job? DeserializeJob(string message, ILogger<Worker> logger = null) {
         try
         {
-            Jobs? job = JsonSerializer.Deserialize<Jobs>(message);
+            Job? job = JsonSerializer.Deserialize<Job>(message);
             return job;
         }
         catch (Exception)
@@ -96,10 +96,10 @@ public class Worker : BackgroundService
         }
         await _channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
 
-        Jobs? job = DeserializeJob(message, _logger);
+        Job? job = DeserializeJob(message, _logger);
 
         if (job != null) {
-            await _downloader.DownloadAsync(job.PhotoStorageKey);
+            await _downloader.DownloadAsync(job, channel: _channel);
 
             // TODO: Send Job to printer
         }

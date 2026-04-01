@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace PrintSvc.Contracts;
 
-public class Jobs
+public class Job
 {
     [JsonPropertyName("jobId")]
     public required string JobId {get; set;}

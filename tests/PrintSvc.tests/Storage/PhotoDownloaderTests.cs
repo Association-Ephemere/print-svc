@@ -14,6 +14,7 @@ using Minio.DataModel.Args;
 using Minio.DataModel.Response;
 using Minio.Exceptions;
 using Moq;
+using PrintSvc.Contracts;
 using PrintSvc.Settings;
 using PrintSvc.Storage;
 using Xunit;
@@ -22,35 +23,63 @@ namespace PrintSvc.tests.Storage
 {
     public class PhotoDownloaderTests
     {
-        private static IPhotoDownloader CreateDownloader(IMinioClient client, string bucket = "photos", string tmpDir = "tmp") =>
-       new PhotoDownloader(
+
+        private static PhotoDownloader CreateDownloader(IMinioClient client, string bucket = "photos", string tmpDir = "tmp") =>
+       new (
            client,
            Options.Create(new StorageSettings
            {
                Bucket = bucket,
                TempDirectory = tmpDir
            }),
+           Options.Create(new BrokerSettings { JobsQueue = "job", ResultsQueue = "results"}),
            NullLogger<PhotoDownloader>.Instance
        );
 
-        private static ObjectStat OkResponse() =>
-            null;
-
         [Fact]
-        public async Task DownloadAsync_DownloadExistingImage()
+        public async Task DownloadAsync_DownloadFailure()
         {
-            var capturedArgs = new List<GetObjectArgs>();
             var mock = new Mock<IMinioClient>();
             mock.Setup(m => m.GetObjectAsync(It.IsAny<GetObjectArgs>(), It.IsAny<CancellationToken>()))
-                .Callback<GetObjectArgs, CancellationToken>((a, _) => capturedArgs.Add(a))
-                .ReturnsAsync(OkResponse());
+                .Throws(new MinioException());
 
-            var uploader = CreateDownloader(mock.Object);
+            var downloader = CreateDownloader(mock.Object);
 
-            await uploader.DownloadAsync("image.jpg");
+            Job job = new Job() { BatchId = "id-123", JobId = "job-123", PhotoStorageKey = "image.jpg", Copies = 1 };
 
-            Assert.Single(capturedArgs);
+            bool res = await downloader.DownloadAsync(job);
+
+            Assert.False(res);
+            Assert.False(File.Exists(Path.Combine("./tmp/", Path.GetFileName(job.PhotoStorageKey))));
+
+        }
+
+        public static T? CreateInstanceNonPublic<T>(params object[] args)
+        {
+            return (T?)Activator.CreateInstance(
+                typeof(T),
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                null,
+                args,
+                null);
+        }
+
+        [Fact]
+        public async Task DownloadAsync_DownloadWorks_And_CheckCleanUp()
+        {
+            var mock = new Mock<IMinioClient>();
+            mock.Setup(m => m.GetObjectAsync(It.IsAny<GetObjectArgs>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(CreateInstanceNonPublic<ObjectStat>());
+
+            var downloader = CreateDownloader(mock.Object);
+
+            Job job = new Job() { BatchId = "id-123", JobId = "job-123", PhotoStorageKey = "image.jpg", Copies = 1 };
+
+            bool res = await downloader.DownloadAsync(job);
             
+            Assert.True(res);
+            Assert.False(File.Exists(Path.Combine("./tmp/", Path.GetFileName(job.PhotoStorageKey))));
+
         }
     }
 }

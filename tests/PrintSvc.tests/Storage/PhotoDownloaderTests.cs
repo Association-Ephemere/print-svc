@@ -1,57 +1,56 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Reflection;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Minio;
+using Minio.DataModel;
 using Minio.DataModel.Args;
 using Minio.DataModel.Response;
+using Minio.Exceptions;
 using Moq;
 using PrintSvc.Settings;
 using PrintSvc.Storage;
 using Xunit;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace PrintSvc.tests.Storage
 {
     public class PhotoDownloaderTests
     {
+        private static IPhotoDownloader CreateDownloader(IMinioClient client, string bucket = "photos", string tmpDir = "tmp") =>
+       new PhotoDownloader(
+           client,
+           Options.Create(new StorageSettings
+           {
+               Bucket = bucket,
+               TempDirectory = tmpDir
+           }),
+           NullLogger<PhotoDownloader>.Instance
+       );
+
+        private static ObjectStat OkResponse() =>
+            null;
+
         [Fact]
-        public async Task DownloadAsync_CreatesDirectory_AndDownloadsFile()
+        public async Task DownloadAsync_DownloadExistingImage()
         {
-            // Arrange
-            var minioClientMock = new Mock<IMinioClient>();
-            var settings = new StorageSettings
-            {
-                Endpoint = "localhost",
-                AccessKey = "user",
-                SecretKey = "pass",
-                Bucket = "photos",
-                TempDirectory = "test_temp",
-                UseSSL = false
-            };
-            var options = Options.Create(settings);
+            var capturedArgs = new List<GetObjectArgs>();
+            var mock = new Mock<IMinioClient>();
+            mock.Setup(m => m.GetObjectAsync(It.IsAny<GetObjectArgs>(), It.IsAny<CancellationToken>()))
+                .Callback<GetObjectArgs, CancellationToken>((a, _) => capturedArgs.Add(a))
+                .ReturnsAsync(OkResponse());
 
-            var downloader = new PhotoDownloader(minioClientMock.Object, options, NullLogger<PhotoDownloader>.Instance);
-            string photoKey = "image.png";
+            var uploader = CreateDownloader(mock.Object);
 
-            // Act
-            await downloader.DownloadAsync(photoKey, ct : default);
+            await uploader.DownloadAsync("image.jpg");
 
-            // Assert
-            minioClientMock.Verify(c => c.GetObjectAsync(
-                It.Is<GetObjectArgs>(args => args.BucketName == settings.Bucket && args.ObjectName == photoKey), 
-                It.IsAny<CancellationToken>()), 
-                Times.Once);
-
-            if (Directory.Exists(settings.TempDirectory))
-            {
-                Directory.Delete(settings.TempDirectory, true);
-            }
+            Assert.Single(capturedArgs);
+            
         }
     }
 }

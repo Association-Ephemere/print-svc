@@ -24,7 +24,7 @@ namespace PrintSvc.Storage
             _logger = logger;
         }
 
-        public async Task DownloadAsync(string key, int maxtries = 3, int delay = 1000, CancellationToken ct = default)
+        public async Task<bool> DownloadAsync(string key, int maxtries = 3, int delay = 1000, CancellationToken ct = default)
         {
             
             string fileName = Path.GetFileName(key);
@@ -43,19 +43,23 @@ namespace PrintSvc.Storage
                         .WithObject(key)
                         .WithFile(destinationPath);
 
+                    Directory.CreateDirectory(destinationFolder);
+                    File.Create(destinationPath).Close();
+
                     await _client.GetObjectAsync(args, ct);
 
                     _logger.LogDebug($"Downloaded photo:\n\t - Filename: {fileName}\n\t - Location: {(destinationPath)}");
-                    return;
+                    return true;
                 }
                 catch (MinioException e)
                 {
-                    _logger.LogError(e, $"Error while downloading {key}, Attempt: {i+1}");
+                    _logger.LogError($"Error while downloading {key}, Attempt: {i+1}");
                     await Task.Delay(delay);
                 }
             }
 
             _logger.LogError($"Error while downloading {key}");
+            return false;
         }
     }
 }

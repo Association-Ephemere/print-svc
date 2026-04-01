@@ -99,7 +99,7 @@ public class Worker : BackgroundService
         Jobs? job = DeserializeJob(message, _logger);
 
         if (job != null) {
-            await _downloader.DownloadAsync(job.photoStorageKey);
+            await _downloader.DownloadAsync(job.PhotoStorageKey);
 
             // TODO: Send Job to printer
         }

@@ -1,25 +1,27 @@
 using PrintSvc;
 using PrintSvc.Settings;
 
-IHost host = Host.CreateDefaultBuilder(args)
-    .ConfigureAppConfiguration((hostingContext, config) =>
-    {
-        // On vide parfois les sources par défaut ou on ajoute simplement la nôtre
-        config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-              .AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true) // Votre fichier
-              .AddEnvironmentVariables();
-    })
-    .ConfigureServices((hostContext, services) =>
-    {
-        var configuration = hostContext.Configuration;
+var builder = Host.CreateApplicationBuilder(args);
+builder.Services.AddHostedService<Worker>();
+#if DEBUG
+builder.Configuration.AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true);
+#else
+        builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+#endif
+builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true) // Votre fichier
+      .AddEnvironmentVariables();
 
-        // Liaison des sections aux classes POCO
-        services.Configure<BrokerSettings>(configuration.GetSection("Broker"));
-        services.Configure<StorageSettings>(configuration.GetSection("Storage"));
-        services.Configure<PrintingSettings>(configuration.GetSection("Printing"));
+var configuration = builder.Configuration;
 
-        services.AddHostedService<Worker>();
-    })
-    .Build();
+builder.Services.Configure<BrokerSettings>(configuration.GetSection("Broker"));
+builder.Services.Configure<StorageSettings>(configuration.GetSection("Storage"));
+builder.Services.Configure<PrintingSettings>(configuration.GetSection("Printing"));
+
+
+var storageConfig = builder.Configuration.GetSection("Storage").Get<StorageSettings>()
+    ?? throw new InvalidOperationException("Storage configuration is required");
+
+
+IHost host = builder.Build();
 
 await host.RunAsync();

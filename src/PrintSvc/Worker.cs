@@ -26,7 +26,7 @@ public class Worker : BackgroundService
         _logger = logger;
     }
 
-    internal static Jobs? DeserializeJob(string message) {
+    internal static Jobs? DeserializeJob(string message, ILogger<Worker> logger = null) {
         try
         {
             Jobs? job = JsonSerializer.Deserialize<Jobs>(message);
@@ -34,13 +34,14 @@ public class Worker : BackgroundService
         }
         catch (Exception)
         {
+            string errorText = $"Error while deserializing message: {message.Replace("\n", "")}";
+
+            if (logger != null)
+                logger.LogError(errorText);
+            else
+                Console.WriteLine("Error: " + errorText);
             return null;
         }
-
-        /*if (job != null)
-        {
-            _logger.LogInformation($"Received:\n\t - Job ID: {job.jobId}\n\t - Batch Id: {job.batchId}\n\t - Photo Storage Key: {job.photoStorageKey}\n\t - Copies: {job.copies}");
-        }*/
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -84,11 +85,13 @@ public class Worker : BackgroundService
 
         _logger.LogDebug("Raw Message : {Message}", message);
 
-#pragma warning disable CS8602 // Déréférencement d'une éventuelle référence null.
+        if (_channel == null)
+        {
+            // TODO: null channel, Issue #6
+        }
         await _channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
-#pragma warning restore CS8602 // Déréférencement d'une éventuelle référence null.
 
-        Jobs? job = DeserializeJob(message);
+        Jobs? job = DeserializeJob(message, _logger);
 
         if (job != null) {
             // TODO: Send Job to printer

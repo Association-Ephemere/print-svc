@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PrintSvc.Contracts;
 
 public class Jobs

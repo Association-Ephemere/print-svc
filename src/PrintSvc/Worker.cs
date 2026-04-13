@@ -19,7 +19,7 @@ public class Worker : BackgroundService
     private IConnection? _connection;
     private IChannel? _channel;
     public Worker(
-        IOptions<BrokerSettings> brokerOptions, 
+        IOptions<BrokerSettings> brokerOptions,
         IOptions<StorageSettings> storageOptions,
         ILogger<Worker> logger,
         IPhotoDownloader downloader)
@@ -31,7 +31,8 @@ public class Worker : BackgroundService
 
     }
 
-    internal static Job? DeserializeJob(string message, ILogger<Worker> logger = null) {
+    internal static Job? DeserializeJob(string message, ILogger<Worker> logger = null)
+    {
         try
         {
             Job? job = JsonSerializer.Deserialize<Job>(message);
@@ -84,7 +85,8 @@ public class Worker : BackgroundService
         }
     }
 
-    private async Task Consumer_ReceivedAsync(object sender, BasicDeliverEventArgs @event) {
+    private async Task Consumer_ReceivedAsync(object sender, BasicDeliverEventArgs @event)
+    {
         var body = @event.Body.ToArray();
         var message = Encoding.UTF8.GetString(body);
 
@@ -96,12 +98,15 @@ public class Worker : BackgroundService
         }
         await _channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
 
+
         Job? job = DeserializeJob(message, _logger);
 
-        if (job != null) {
+
+        if (job != null)
+        {
+
             await _downloader.DownloadAsync(job, channel: _channel);
 
-            // TODO: Send Job to printer
         }
 
     }

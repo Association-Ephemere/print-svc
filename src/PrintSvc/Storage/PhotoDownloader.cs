@@ -25,10 +25,13 @@ namespace PrintSvc.Storage
 
         public async Task<bool> DownloadAsync(Job job, int maxtries = 3, int delay = 1000, IChannel? channel = null, CancellationToken ct = default)
         {
-            
+
             string fileName = Path.GetFileName(job.PhotoStorageKey);
             string destinationFolder = _storage.TempDirectory;
+
+            _logger.LogInfo();
             Directory.CreateDirectory(destinationFolder);
+
 
             string destinationPath = Path.Combine(destinationFolder, fileName);
 
@@ -71,7 +74,7 @@ namespace PrintSvc.Storage
                              cancellationToken: default);
 
 
-                    Result r = new Result() { JobId = job.JobId, Status = "failed", ErrorMessage = $"Error while downloading the photo: {fileName}"};
+                    Result r = new Result() { JobId = job.JobId, Status = "failed", ErrorMessage = $"Error while downloading the photo: {fileName}" };
                     var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(r));
                     await channel.BasicPublishAsync("", _broker.ResultsQueue, body, cancellationToken: default);
                 }

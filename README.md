@@ -91,9 +91,13 @@ sc start PrintSvc
 ```json
 {
   "jobId": "uuid",
-  "batchId": "uuid",
-  "photoStorageKey": "events/xxx/photo.jpg",
-  "copies": 2
+  "photos": [
+    {
+      "photoStorageKey": "string",
+      "copies": 1
+    }
+  ],
+  "startFromIndex": 0
 }
 ```
 
@@ -102,8 +106,10 @@ sc start PrintSvc
 ```json
 {
   "jobId": "uuid",
-  "status": "printing | waiting_validation | failed",
-  "errorMessage": null
+  "status": "queued|printing|requeued|done|error",
+  "printed": 123,
+  "total": 456,
+  "error": "string|null"
 }
 ```
 

@@ -23,13 +23,12 @@ namespace PrintSvc.Storage
         private readonly BrokerSettings _broker = broker.Value;
         private readonly ILogger<PhotoDownloader> _logger = logger;
 
-        public async Task<bool> DownloadAsync(Job job, int maxtries = 3, int delay = 1000, IChannel? channel = null, CancellationToken ct = default)
+        public async Task<bool> DownloadAsync(Job job, JobPhoto photo, int maxtries = 3, int delay = 1000, IChannel? channel = null, CancellationToken ct = default)
         {
 
-            string fileName = Path.GetFileName(job.PhotoStorageKey);
+            string fileName = Path.GetFileName(photo.PhotoStorageKey);
             string destinationFolder = _storage.TempDirectory;
 
-            _logger.LogInfo();
             Directory.CreateDirectory(destinationFolder);
 
 
@@ -40,7 +39,7 @@ namespace PrintSvc.Storage
 
                 var args = new GetObjectArgs()
                     .WithBucket(_storage.Bucket)
-                    .WithObject(job.PhotoStorageKey)
+                    .WithObject(photo.PhotoStorageKey)
                     .WithFile(destinationPath);
 
                 Directory.CreateDirectory(destinationFolder);
@@ -50,19 +49,11 @@ namespace PrintSvc.Storage
 
                 _logger.LogDebug($"Downloaded photo:\n\t - Filename: {fileName}\n\t - Location: {destinationPath}");
 
-                // TODO: Send to printer #3
-
-                if (File.Exists(destinationPath))
-                {
-                    File.Delete(destinationPath);
-                    _logger.LogDebug("File deleted.");
-                }
-
                 return true;
             }
             catch (MinioException)
             {
-                _logger.LogError($"Error while downloading {job.PhotoStorageKey}");
+                _logger.LogError($"Error while downloading {photo.PhotoStorageKey}");
 
                 if (channel != null)
                 {
@@ -74,7 +65,14 @@ namespace PrintSvc.Storage
                              cancellationToken: default);
 
 
-                    Result r = new Result() { JobId = job.JobId, Status = "failed", ErrorMessage = $"Error while downloading the photo: {fileName}" };
+                    Result r = new Result()
+                    {
+                        JobId = job.JobId,
+                        Status = "error",
+                        Printed = 0,
+                        Total = photo.Copies,
+                        Error = $"Error while downloading the photo: {fileName}"
+                    };
                     var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(r));
                     await channel.BasicPublishAsync("", _broker.ResultsQueue, body, cancellationToken: default);
                 }
@@ -88,5 +86,7 @@ namespace PrintSvc.Storage
                 return false;
             }
         }
+
+        
     }
 }

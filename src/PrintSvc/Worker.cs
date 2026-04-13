@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using PrintSvc.Contracts;
+using PrintSvc.Printer;
 using PrintSvc.Settings;
 using PrintSvc.Storage;
 using RabbitMQ.Client;
@@ -13,6 +14,7 @@ public class Worker : BackgroundService
 {
     private readonly BrokerSettings _broker;
     private readonly StorageSettings _storage;
+    private readonly PrintingSettings _printing;
     private readonly ILogger<Worker> _logger;
     private readonly IPhotoDownloader _downloader;
 
@@ -21,17 +23,19 @@ public class Worker : BackgroundService
     public Worker(
         IOptions<BrokerSettings> brokerOptions,
         IOptions<StorageSettings> storageOptions,
+        IOptions<PrintingSettings> printingOptions,
         ILogger<Worker> logger,
         IPhotoDownloader downloader)
     {
         _broker = brokerOptions.Value;
         _storage = storageOptions.Value;
+        _printing = printingOptions.Value;
         _logger = logger;
         _downloader = downloader;
 
     }
 
-    internal static Job? DeserializeJob(string message, ILogger<Worker> logger = null)
+    internal static Job? DeserializeJob(string message, ILogger<Worker>? logger = null)
     {
         try
         {
@@ -92,11 +96,14 @@ public class Worker : BackgroundService
 
         _logger.LogDebug("Raw Message : {Message}", message);
 
-        if (_channel == null)
+        var channel = _channel;
+
+        if (channel == null)
         {
-            // TODO: null channel, Issue #6
+            _logger.LogError("RabbitMQ channel is not available.");
+            return;
         }
-        await _channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
+        await channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
 
 
         Job? job = DeserializeJob(message, _logger);
@@ -104,10 +111,37 @@ public class Worker : BackgroundService
 
         if (job != null)
         {
+            foreach (JobPhoto photo in job.Photos.Skip(job.StartFromIndex))
+            {
+                bool res = await _downloader.DownloadAsync(job, photo, channel: channel);
 
-            await _downloader.DownloadAsync(job, channel: _channel);
+                if (res == true)
+                {
+                    SendDownloadedPhotoToPrinter(photo);
+                }
 
+            }
         }
 
+    }
+
+    private void SendDownloadedPhotoToPrinter(JobPhoto photo)
+    {
+        string fileName = Path.GetFileName(photo.PhotoStorageKey);
+        string downloadedPhotoPath = Path.Combine(_storage.TempDirectory, fileName);
+
+        _logger.LogInformation("Sending photo {FileName} to printer.", fileName);
+
+        new FileInfo(downloadedPhotoPath).Print(
+            _printing.PrinterName,
+            photo.Copies,
+            _printing.PaperWidthInches,
+            _printing.PaperHeightInches);
+
+        if (File.Exists(downloadedPhotoPath))
+        {
+            File.Delete(downloadedPhotoPath);
+            _logger.LogDebug("Deleted printed photo {FileName}.", fileName);
+        }
     }
 }

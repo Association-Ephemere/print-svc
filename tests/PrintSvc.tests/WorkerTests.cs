@@ -7,7 +7,7 @@ public class WorkerTests
     [Fact]
     public void DeserializeJob_Return_Job()
     {
-        string message = "{\"jobId\": \"uuid\",\"batchId\": \"uuid\",\"photoStorageKey\": \"events/xxx/photo.jpg\",\"copies\": 2}";
+        string message = "{\"jobId\": \"uuid\",\"photos\":[{\"photoStorageKey\":\"events/xxx/photo.jpg\",\"copies\":2}],\"startFromIndex\":0}";
 
         Job? job = Worker.DeserializeJob(message);
 
@@ -16,7 +16,7 @@ public class WorkerTests
     }
 
     [Theory]
-    [InlineData("{\"jobId\": \"uuid\",\"batchId\": \"uuid\",\"photoStorageKey\": \"events/xxx/photo.jpg\",\"copies\": 2")]
+    [InlineData("{\"jobId\": \"uuid\",\"photos\":[{\"photoStorageKey\":\"events/xxx/photo.jpg\",\"copies\":2}],\"startFromIndex\":0")]
     [InlineData("{\"jobId\": \"uuid\"}")]
     [InlineData("{}")]
     public void DeserializeJob_Return_null(string value)

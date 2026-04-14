@@ -95,9 +95,16 @@ public class Worker : BackgroundService
 
         _logger.LogInformation("Waiting for messages on {Queue}...", _broker.JobsQueue);
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            await Task.Delay(1000, stoppingToken);
+            while (!stoppingToken.IsCancellationRequested)
+                await Task.Delay(1000, stoppingToken);
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (_channel != null) await _channel.CloseAsync();
+            if (_connection != null) await _connection.CloseAsync();
         }
     }
 
@@ -156,10 +163,18 @@ public class Worker : BackgroundService
 
         foreach (JobPhoto photo in job.Photos.Skip(job.StartFromIndex))
         {
-            bool downloaded = await _downloader.DownloadAsync(job, photo, channel: channel);
-            if (!downloaded)
+            DownloadResult downloadResult = await _downloader.DownloadAsync(job, photo);
+            if (!downloadResult.Success)
             {
                 hasError = true;
+                await _publisher.PublishAsync(channel, new Result
+                {
+                    JobId = job.JobId,
+                    Status = "error",
+                    Printed = printed,
+                    Total = job.Photos.Count,
+                    Error = downloadResult.Error
+                });
                 continue;
             }
 

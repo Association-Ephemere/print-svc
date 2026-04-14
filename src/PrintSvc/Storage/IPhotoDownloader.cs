@@ -1,13 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Text;
 using PrintSvc.Contracts;
-using RabbitMQ.Client;
 
-namespace PrintSvc.Storage
+namespace PrintSvc.Storage;
+
+public record DownloadResult(bool Success, string? Error = null);
+
+public interface IPhotoDownloader
 {
-    public interface IPhotoDownloader
-    {
-        Task<bool> DownloadAsync(Job job, JobPhoto photo, int maxtries = 3, int delay = 1000, IChannel? channel = null, CancellationToken ct = default);
-    }
+    Task<DownloadResult> DownloadAsync(Job job, JobPhoto photo, int maxtries = 3, int delay = 1000, CancellationToken ct = default);
 }

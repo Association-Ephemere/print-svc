@@ -22,6 +22,8 @@ public class Worker : BackgroundService
 
     private IConnection? _connection;
     private IChannel? _channel;
+    private readonly SemaphoreSlim _processingGate = new(1, 1);
+    private CancellationToken _stoppingToken;
 
     public Worker(
         IOptions<BrokerSettings> brokerOptions,
@@ -67,6 +69,8 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _stoppingToken = stoppingToken;
+
         var factory = new ConnectionFactory
         {
             HostName = _broker.Host,
@@ -88,7 +92,7 @@ public class Worker : BackgroundService
         var consumer = new AsyncEventingBasicConsumer(_channel);
         consumer.ReceivedAsync += Consumer_ReceivedAsync;
 
-        await _channel.BasicConsumeAsync(
+        string consumerTag = await _channel.BasicConsumeAsync(
             queue: _broker.JobsQueue,
             autoAck: false,
             consumer: consumer);
@@ -103,6 +107,15 @@ public class Worker : BackgroundService
         catch (OperationCanceledException) { }
         finally
         {
+            _logger.LogInformation("Shutdown signal received, waiting for current job to complete...");
+            if (_channel != null)
+            {
+                try { await _channel.BasicCancelAsync(consumerTag); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to cancel consumer {ConsumerTag}.", consumerTag); }
+            }
+            await _processingGate.WaitAsync();
+            _processingGate.Release();
+            _logger.LogInformation("Graceful shutdown complete.");
             if (_channel != null) await _channel.CloseAsync();
             if (_connection != null) await _connection.CloseAsync();
         }
@@ -119,41 +132,56 @@ public class Worker : BackgroundService
 
         if (channel == null)
         {
-            _logger.LogError("RabbitMQ channel is not available.");
+            _logger.LogError("Dropping message {DeliveryTag}: channel unavailable during shutdown.", @event.DeliveryTag);
             return;
         }
 
-        Job? job = DeserializeJob(message, _logger);
-
-        if (job == null)
+        await _processingGate.WaitAsync();
+        try
         {
-            _logger.LogError("Rejecting message {DeliveryTag}: failed to deserialize job.", @event.DeliveryTag);
-            await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
-            return;
-        }
+            if (_stoppingToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("Shutdown in progress, requeueing message {DeliveryTag}.", @event.DeliveryTag);
+                await channel.BasicNackAsync(deliveryTag: @event.DeliveryTag, multiple: false, requeue: true);
+                return;
+            }
 
-        var photos = job.Photos;
-        if (photos == null)
+            Job? job = DeserializeJob(message, _logger);
+
+            if (job == null)
+            {
+                _logger.LogError("Rejecting message {DeliveryTag}: failed to deserialize job.", @event.DeliveryTag);
+                await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
+                return;
+            }
+
+            var photos = job.Photos;
+            if (photos == null)
+            {
+                _logger.LogError("Rejecting message {DeliveryTag}: job contains null Photos collection.", @event.DeliveryTag);
+                await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
+                return;
+            }
+
+            var photoCount = photos.Count;
+            if (job.StartFromIndex < 0 || job.StartFromIndex > photoCount)
+            {
+                _logger.LogError(
+                    "Rejecting message {DeliveryTag}: StartFromIndex {StartFromIndex} is out of bounds for Photos count {PhotoCount}.",
+                    @event.DeliveryTag,
+                    job.StartFromIndex,
+                    photoCount);
+                await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
+                return;
+            }
+
+            await channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
+            await ProcessPhotosAsync(job, channel);
+        }
+        finally
         {
-            _logger.LogError("Rejecting message {DeliveryTag}: job contains null Photos collection.", @event.DeliveryTag);
-            await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
-            return;
+            _processingGate.Release();
         }
-
-        var photoCount = photos.Count;
-        if (job.StartFromIndex < 0 || job.StartFromIndex > photoCount)
-        {
-            _logger.LogError(
-                "Rejecting message {DeliveryTag}: StartFromIndex {StartFromIndex} is out of bounds for Photos count {PhotoCount}.",
-                @event.DeliveryTag,
-                job.StartFromIndex,
-                photoCount);
-            await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
-            return;
-        }
-
-        await channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
-        await ProcessPhotosAsync(job, channel);
     }
 
     internal async Task ProcessPhotosAsync(Job job, IChannel channel)
@@ -244,5 +272,11 @@ public class Worker : BackgroundService
             photo.Copies,
             _printing.PaperWidthInches,
             _printing.PaperHeightInches);
+    }
+
+    public override void Dispose()
+    {
+        _processingGate.Dispose();
+        base.Dispose();
     }
 }

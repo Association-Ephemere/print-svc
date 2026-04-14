@@ -16,6 +16,8 @@ builder.Services.Configure<PrintingSettings>(configuration.GetSection("Printing"
 
 builder.Services.AddSingleton<IResultPublisher, ResultPublisher>();
 builder.Services.AddSingleton<IPhotoDownloader, PhotoDownloader>();
+builder.Services.Configure<HostOptions>(options =>
+    options.ShutdownTimeout = TimeSpan.FromMinutes(5));
 
 
 var storageConfig = builder.Configuration.GetSection("Storage").Get<StorageSettings>()

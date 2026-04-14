@@ -103,26 +103,47 @@ public class Worker : BackgroundService
             _logger.LogError("RabbitMQ channel is not available.");
             return;
         }
-        await channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
-
 
         Job? job = DeserializeJob(message, _logger);
 
-
-        if (job != null)
+        if (job == null)
         {
-            foreach (JobPhoto photo in job.Photos.Skip(job.StartFromIndex))
+            _logger.LogError("Rejecting message {DeliveryTag}: failed to deserialize job.", @event.DeliveryTag);
+            await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
+            return;
+        }
+
+        var photos = job.Photos;
+        if (photos == null)
+        {
+            _logger.LogError("Rejecting message {DeliveryTag}: job contains null Photos collection.", @event.DeliveryTag);
+            await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
+            return;
+        }
+
+        var photoCount = photos.Count;
+        if (job.StartFromIndex < 0 || job.StartFromIndex > photoCount)
+        {
+            _logger.LogError(
+                "Rejecting message {DeliveryTag}: StartFromIndex {StartFromIndex} is out of bounds for Photos count {PhotoCount}.",
+                @event.DeliveryTag,
+                job.StartFromIndex,
+                photoCount);
+            await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
+            return;
+        }
+
+        foreach (JobPhoto photo in photos.Skip(job.StartFromIndex))
+        {
+            bool res = await _downloader.DownloadAsync(job, photo, channel: channel);
+
+            if (res == true)
             {
-                bool res = await _downloader.DownloadAsync(job, photo, channel: channel);
-
-                if (res == true)
-                {
-                    SendDownloadedPhotoToPrinter(photo);
-                }
-
+                SendDownloadedPhotoToPrinter(photo);
             }
         }
 
+        await channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
     }
 
     private void SendDownloadedPhotoToPrinter(JobPhoto photo)

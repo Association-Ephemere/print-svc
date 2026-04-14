@@ -10,7 +10,7 @@ flowchart LR
     printsvc["print-svc.exe\nWindows Service"]
     storage["Object storage\nMinIO"]
     printer["Printer"]
-    results["Message broker\nqueue: print.results"]
+    results["Message broker\nqueue: print.status"]
     jobsvc["job-svc"]
     db["PostgreSQL"]
     frontend["Frontend"]
@@ -46,7 +46,7 @@ Create an `appsettings.local.json` file at the root (not committed):
     "Username": "guest",
     "Password": "guest",
     "JobsQueue": "print.jobs",
-    "ResultsQueue": "print.results"
+    "ResultsQueue": "print.status"
   },
   "Storage": {
     "Endpoint": "localhost:9000",
@@ -101,14 +101,14 @@ sc start PrintSvc
 }
 ```
 
-### Published — `print.results`
+### Published — `print.status`
 
 ```json
 {
-  "jobId": "uuid",
-  "status": "queued|printing|requeued|done|error",
-  "printed": 123,
-  "total": 456,
+  "jobId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "status": "printing|done|error",
+  "printed": 1,
+  "total": 3,
   "error": "string|null"
 }
 ```

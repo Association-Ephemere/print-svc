@@ -42,18 +42,25 @@ public class Worker : BackgroundService
             Job? job = JsonSerializer.Deserialize<Job>(message);
             return job;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            string errorText = $"Error while deserializing message: {message.Replace("\n", "")}";
+            string messagePreview = CreateMessagePreview(message);
 
-            if (logger != null)
-                logger.LogError(errorText);
-            else
-                Console.WriteLine("Error: " + errorText);
+            logger?.LogError(ex, "Error while deserializing broker message. Preview: {MessagePreview}", messagePreview);
             return null;
         }
     }
 
+    private static string CreateMessagePreview(string message)
+    {
+        const int MaxPreviewLength = 256;
+        string sanitized = message.Replace("\r", "").Replace("\n", "");
+
+        if (sanitized.Length <= MaxPreviewLength)
+            return sanitized;
+
+        return sanitized.Substring(0, MaxPreviewLength) + "...";
+    }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var factory = new ConnectionFactory

@@ -5,12 +5,14 @@ namespace PrintSvc.tests.Contracts;
 
 public class ResultTests
 {
+    private static readonly Guid TestJobId = new("12345678-1234-1234-1234-123456789abc");
+
     [Fact]
     public void Result_Serializes_NewSchema()
     {
         var result = new Result
         {
-            JobId = "job-123",
+            JobId = TestJobId,
             Status = "error",
             Printed = 0,
             Total = 2,

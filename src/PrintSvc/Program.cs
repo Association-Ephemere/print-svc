@@ -1,5 +1,6 @@
 using Minio;
 using PrintSvc;
+using PrintSvc.Publisher;
 using PrintSvc.Settings;
 using PrintSvc.Storage;
 
@@ -13,6 +14,7 @@ builder.Services.Configure<BrokerSettings>(configuration.GetSection("Broker"));
 builder.Services.Configure<StorageSettings>(configuration.GetSection("Storage"));
 builder.Services.Configure<PrintingSettings>(configuration.GetSection("Printing"));
 
+builder.Services.AddSingleton<IResultPublisher, ResultPublisher>();
 builder.Services.AddSingleton<IPhotoDownloader, PhotoDownloader>();
 
 

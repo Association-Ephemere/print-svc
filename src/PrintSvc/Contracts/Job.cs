@@ -6,7 +6,7 @@ namespace PrintSvc.Contracts;
 public class Job
 {
     [JsonPropertyName("jobId")]
-    public required string JobId { get; set; }
+    public required Guid JobId { get; set; }
 
     [JsonPropertyName("photos")]
     public required List<JobPhoto> Photos { get; set; }

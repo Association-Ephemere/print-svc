@@ -5,7 +5,7 @@ namespace PrintSvc.Contracts;
 public class Result
 {
     [JsonPropertyName("jobId")]
-    public string JobId { get; set; } = string.Empty;
+    public Guid JobId { get; set; }
 
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;

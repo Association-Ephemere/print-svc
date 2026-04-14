@@ -1,80 +1,91 @@
-using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Channels;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Minio;
 using Minio.DataModel.Args;
 using Minio.Exceptions;
 using PrintSvc.Contracts;
+using PrintSvc.Publisher;
 using PrintSvc.Settings;
 using RabbitMQ.Client;
 
-namespace PrintSvc.Storage
+namespace PrintSvc.Storage;
+
+public sealed class PhotoDownloader(
+    IMinioClient client,
+    IOptions<StorageSettings> storageOptions,
+    ILogger<PhotoDownloader> logger,
+    IResultPublisher publisher) : IPhotoDownloader
 {
-    public sealed class PhotoDownloader(IMinioClient client, IOptions<StorageSettings> storageOptions, IOptions<BrokerSettings> broker, ILogger<PhotoDownloader> logger) : IPhotoDownloader
+    private readonly IMinioClient _client = client;
+    private readonly StorageSettings _storage = storageOptions.Value;
+    private readonly ILogger<PhotoDownloader> _logger = logger;
+    private readonly IResultPublisher _publisher = publisher;
+
+    public async Task<bool> DownloadAsync(Job job, JobPhoto photo, int maxtries = 3, int delay = 1000, IChannel? channel = null, CancellationToken ct = default)
     {
-        private readonly IMinioClient _client = client;
-        private readonly StorageSettings _storage = storageOptions.Value;
-        private readonly BrokerSettings _broker = broker.Value;
-        private readonly ILogger<PhotoDownloader> _logger = logger;
-
-        public async Task<bool> DownloadAsync(Job job, JobPhoto photo, int maxtries = 3, int delay = 1000, IChannel? channel = null, CancellationToken ct = default)
+        string extension = Path.GetExtension(photo.PhotoStorageKey).ToLowerInvariant();
+        if (extension != ".jpg" && extension != ".jpeg")
         {
+            _logger.LogError("Rejecting photo {Key}: unsupported format. Only JPEG files are supported.", photo.PhotoStorageKey);
 
-            string fileName = Path.GetFileName(photo.PhotoStorageKey);
-            string destinationFolder = _storage.TempDirectory;
+            if (channel != null)
+            {
+                await _publisher.PublishAsync(channel, new Result
+                {
+                    JobId = job.JobId,
+                    Status = "error",
+                    Printed = 0,
+                    Total = job.Photos.Count,
+                    Error = $"Unsupported file format: {extension}"
+                }, ct);
+            }
 
-            Directory.CreateDirectory(destinationFolder);
+            return false;
+        }
 
+        string fileName = Path.GetFileName(photo.PhotoStorageKey);
+        string destinationFolder = _storage.TempDirectory;
+        string destinationPath = Path.Combine(destinationFolder, fileName);
 
-            string destinationPath = Path.Combine(destinationFolder, fileName);
+        Directory.CreateDirectory(destinationFolder);
 
+        var args = new GetObjectArgs()
+            .WithBucket(_storage.Bucket)
+            .WithObject(photo.PhotoStorageKey)
+            .WithFile(destinationPath);
+
+        for (int attempt = 1; attempt <= maxtries; attempt++)
+        {
             try
             {
-
-                var args = new GetObjectArgs()
-                    .WithBucket(_storage.Bucket)
-                    .WithObject(photo.PhotoStorageKey)
-                    .WithFile(destinationPath);
-
-                Directory.CreateDirectory(destinationFolder);
                 File.Create(destinationPath).Close();
-
                 await _client.GetObjectAsync(args, ct);
 
                 _logger.LogDebug("Downloaded photo: Filename: {FileName}, Location: {DestinationPath}", fileName, destinationPath);
-
                 return true;
+            }
+            catch (MinioException) when (attempt < maxtries)
+            {
+                _logger.LogWarning("Download attempt {Attempt}/{MaxTries} failed for {Key}. Retrying in {Delay}ms.", attempt, maxtries, photo.PhotoStorageKey, delay);
+                await Task.Delay(delay, ct);
             }
             catch (MinioException)
             {
-                _logger.LogError("Error while downloading {PhotoStorageKey}", photo.PhotoStorageKey);
+                _logger.LogError("All {MaxTries} download attempts failed for {PhotoStorageKey}.", maxtries, photo.PhotoStorageKey);
 
                 if (channel != null)
                 {
-                    await channel.QueueDeclareAsync(queue: _broker.ResultsQueue,
-                             durable: true,
-                             exclusive: false,
-                             autoDelete: false,
-                             arguments: null,
-                             cancellationToken: default);
-
-
-                    Result r = new Result()
+                    await _publisher.PublishAsync(channel, new Result
                     {
                         JobId = job.JobId,
                         Status = "error",
                         Printed = 0,
-                        Total = photo.Copies,
+                        Total = job.Photos.Count,
                         Error = $"Error while downloading the photo: {fileName}"
-                    };
-                    var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(r));
-                    await channel.BasicPublishAsync("", _broker.ResultsQueue, body, cancellationToken: default);
+                    }, ct);
                 }
 
                 if (File.Exists(destinationPath))
@@ -87,6 +98,6 @@ namespace PrintSvc.Storage
             }
         }
 
-        
+        return false; // unreachable, satisfies compiler
     }
 }

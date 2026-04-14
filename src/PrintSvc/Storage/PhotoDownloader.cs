@@ -47,13 +47,13 @@ namespace PrintSvc.Storage
 
                 await _client.GetObjectAsync(args, ct);
 
-                _logger.LogDebug($"Downloaded photo:\n\t - Filename: {fileName}\n\t - Location: {destinationPath}");
+                _logger.LogDebug("Downloaded photo: Filename: {FileName}, Location: {DestinationPath}", fileName, destinationPath);
 
                 return true;
             }
             catch (MinioException)
             {
-                _logger.LogError($"Error while downloading {photo.PhotoStorageKey}");
+                _logger.LogError("Error while downloading {PhotoStorageKey}", photo.PhotoStorageKey);
 
                 if (channel != null)
                 {

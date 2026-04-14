@@ -5,13 +5,7 @@ using PrintSvc.Storage;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddHostedService<Worker>();
-#if DEBUG
-    builder.Configuration.AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true);
-#else
-        builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-#endif
-builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true) // Votre fichier
-      .AddEnvironmentVariables();
+builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true); // Votre fichier
 
 var configuration = builder.Configuration;
 

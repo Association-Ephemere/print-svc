@@ -42,18 +42,25 @@ public class Worker : BackgroundService
             Job? job = JsonSerializer.Deserialize<Job>(message);
             return job;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            string errorText = $"Error while deserializing message: {message.Replace("\n", "")}";
+            string messagePreview = CreateMessagePreview(message);
 
-            if (logger != null)
-                logger.LogError(errorText);
-            else
-                Console.WriteLine("Error: " + errorText);
+            logger?.LogError(ex, "Error while deserializing broker message. Preview: {MessagePreview}", messagePreview);
             return null;
         }
     }
 
+    private static string CreateMessagePreview(string message)
+    {
+        const int MaxPreviewLength = 256;
+        string sanitized = message.Replace("\r", "").Replace("\n", "");
+
+        if (sanitized.Length <= MaxPreviewLength)
+            return sanitized;
+
+        return sanitized.Substring(0, MaxPreviewLength) + "...";
+    }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var factory = new ConnectionFactory
@@ -103,20 +110,39 @@ public class Worker : BackgroundService
             _logger.LogError("RabbitMQ channel is not available.");
             return;
         }
-        await channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
-
 
         Job? job = DeserializeJob(message, _logger);
 
-
-        if (job != null)
+        if (job == null)
         {
-            int totalToPrint = job.Photos.Skip(job.StartFromIndex).Sum(p => p.Copies);
-            int printed = 0;
+            _logger.LogError("Rejecting message {DeliveryTag}: failed to deserialize job.", @event.DeliveryTag);
+            await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
+            return;
+        }
 
-            foreach (JobPhoto photo in job.Photos.Skip(job.StartFromIndex))
-            {
-                bool res = await _downloader.DownloadAsync(job, photo, channel: channel);
+        var photos = job.Photos;
+        if (photos == null)
+        {
+            _logger.LogError("Rejecting message {DeliveryTag}: job contains null Photos collection.", @event.DeliveryTag);
+            await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
+            return;
+        }
+
+        var photoCount = photos.Count;
+        if (job.StartFromIndex < 0 || job.StartFromIndex > photoCount)
+        {
+            _logger.LogError(
+                "Rejecting message {DeliveryTag}: StartFromIndex {StartFromIndex} is out of bounds for Photos count {PhotoCount}.",
+                @event.DeliveryTag,
+                job.StartFromIndex,
+                photoCount);
+            await channel.BasicRejectAsync(deliveryTag: @event.DeliveryTag, requeue: false);
+            return;
+        }
+
+        foreach (JobPhoto photo in photos.Skip(job.StartFromIndex))
+        {
+            bool res = await _downloader.DownloadAsync(job, photo, channel: channel);
 
                 if (res == true)
                 {

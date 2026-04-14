@@ -49,20 +49,30 @@ public class WorkerTests
     }
 
     [Fact]
-    public async Task ProcessPhotosAsync_WhenDownloadFails_DoesNotPublishError()
+    public async Task ProcessPhotosAsync_WhenDownloadFails_PublishesErrorWithCurrentPrintedCount()
     {
         var mockDownloader = new Mock<IPhotoDownloader>();
         mockDownloader
-            .Setup(d => d.DownloadAsync(It.IsAny<Job>(), It.IsAny<JobPhoto>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<IChannel?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+            .Setup(d => d.DownloadAsync(It.IsAny<Job>(), It.IsAny<JobPhoto>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DownloadResult(false, "download failed"));
 
+        Result? publishedResult = null;
         var mockPublisher = new Mock<IResultPublisher>();
-        var worker = CreateWorker(mockDownloader.Object, mockPublisher.Object);
+        mockPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<IChannel>(), It.IsAny<Result>(), It.IsAny<CancellationToken>()))
+            .Callback<IChannel, Result, CancellationToken>((_, r, _) => publishedResult = r)
+            .Returns(Task.CompletedTask);
 
+        var worker = CreateWorker(mockDownloader.Object, mockPublisher.Object);
         var job = new Job { JobId = TestJobId, Photos = [new JobPhoto { PhotoStorageKey = "photo.jpg", Copies = 1 }], StartFromIndex = 0 };
+
         await worker.ProcessPhotosAsync(job, new Mock<IChannel>().Object);
 
-        mockPublisher.Verify(p => p.PublishAsync(It.IsAny<IChannel>(), It.IsAny<Result>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.NotNull(publishedResult);
+        Assert.Equal("error", publishedResult.Status);
+        Assert.Equal(TestJobId, publishedResult.JobId);
+        Assert.Equal(0, publishedResult.Printed);
+        Assert.Equal("download failed", publishedResult.Error);
     }
 
     [Fact]
@@ -70,8 +80,8 @@ public class WorkerTests
     {
         var mockDownloader = new Mock<IPhotoDownloader>();
         mockDownloader
-            .Setup(d => d.DownloadAsync(It.IsAny<Job>(), It.IsAny<JobPhoto>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<IChannel?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true); // Download succeeds but file won't exist on disk → Print throws
+            .Setup(d => d.DownloadAsync(It.IsAny<Job>(), It.IsAny<JobPhoto>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DownloadResult(true)); // Download succeeds but file won't exist on disk → Print throws
 
         Result? publishedResult = null;
         var mockPublisher = new Mock<IResultPublisher>();
@@ -104,8 +114,8 @@ public class WorkerTests
         {
             var mockDownloader = new Mock<IPhotoDownloader>();
             mockDownloader
-                .Setup(d => d.DownloadAsync(It.IsAny<Job>(), It.IsAny<JobPhoto>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<IChannel?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(true);
+                .Setup(d => d.DownloadAsync(It.IsAny<Job>(), It.IsAny<JobPhoto>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new DownloadResult(true));
 
             var mockPublisher = new Mock<IResultPublisher>();
             var worker = CreateWorker(mockDownloader.Object, mockPublisher.Object, tempDir);
@@ -122,7 +132,7 @@ public class WorkerTests
     }
 
     [Fact]
-    public async Task ProcessPhotosAsync_WhenAllSucceed_PublishesPrintingThenDone()
+    public async Task ProcessPhotosAsync_WhenPrintFails_PublishesErrorAndSuppressesDone()
     {
         string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
@@ -132,8 +142,8 @@ public class WorkerTests
         {
             var mockDownloader = new Mock<IPhotoDownloader>();
             mockDownloader
-                .Setup(d => d.DownloadAsync(It.IsAny<Job>(), It.IsAny<JobPhoto>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<IChannel?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(true);
+                .Setup(d => d.DownloadAsync(It.IsAny<Job>(), It.IsAny<JobPhoto>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new DownloadResult(true));
 
             var published = new List<Result>();
             var mockPublisher = new Mock<IResultPublisher>();

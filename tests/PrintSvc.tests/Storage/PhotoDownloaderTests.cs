@@ -10,7 +10,6 @@ using Minio.DataModel.Args;
 using Minio.Exceptions;
 using Moq;
 using PrintSvc.Contracts;
-using PrintSvc.Publisher;
 using PrintSvc.Settings;
 using PrintSvc.Storage;
 using Xunit;
@@ -26,8 +25,7 @@ namespace PrintSvc.tests.Storage
             new(
                 client,
                 Options.Create(new StorageSettings { Bucket = bucket, TempDirectory = tmpDir }),
-                NullLogger<PhotoDownloader>.Instance,
-                new Mock<IResultPublisher>().Object
+                NullLogger<PhotoDownloader>.Instance
             );
 
         public static T? CreateInstanceNonPublic<T>(params object[] args) =>
@@ -49,9 +47,10 @@ namespace PrintSvc.tests.Storage
 
             Job job = new() { JobId = TestJobId, Photos = [new JobPhoto { PhotoStorageKey = "image.jpg", Copies = 1 }], StartFromIndex = 0 };
 
-            bool res = await downloader.DownloadAsync(job, job.Photos[0], maxtries: 1);
+            DownloadResult res = await downloader.DownloadAsync(job, job.Photos[0], maxtries: 1);
 
-            Assert.False(res);
+            Assert.False(res.Success);
+            Assert.NotNull(res.Error);
             Assert.False(File.Exists(Path.Combine(TestTempDirectory, Path.GetFileName(job.Photos[0].PhotoStorageKey))));
         }
 
@@ -66,9 +65,9 @@ namespace PrintSvc.tests.Storage
 
             Job job = new() { JobId = TestJobId, Photos = [new JobPhoto { PhotoStorageKey = "image.jpg", Copies = 1 }], StartFromIndex = 0 };
 
-            bool res = await downloader.DownloadAsync(job, job.Photos[0]);
+            DownloadResult res = await downloader.DownloadAsync(job, job.Photos[0]);
 
-            Assert.True(res);
+            Assert.True(res.Success);
             // Cleanup is Worker's responsibility — file must still exist after download
             Assert.True(File.Exists(Path.Combine(TestTempDirectory, Path.GetFileName(job.Photos[0].PhotoStorageKey))));
 
@@ -91,9 +90,9 @@ namespace PrintSvc.tests.Storage
             var downloader = CreateDownloader(mock.Object);
             Job job = new() { JobId = TestJobId, Photos = [new JobPhoto { PhotoStorageKey = "image.jpg", Copies = 1 }], StartFromIndex = 0 };
 
-            bool res = await downloader.DownloadAsync(job, job.Photos[0], maxtries: 3, delay: 0);
+            DownloadResult res = await downloader.DownloadAsync(job, job.Photos[0], maxtries: 3, delay: 0);
 
-            Assert.True(res);
+            Assert.True(res.Success);
             Assert.Equal(2, callCount);
 
             string tempFile = Path.Combine(TestTempDirectory, "image.jpg");
@@ -110,9 +109,10 @@ namespace PrintSvc.tests.Storage
             var downloader = CreateDownloader(mock.Object);
             Job job = new() { JobId = TestJobId, Photos = [new JobPhoto { PhotoStorageKey = "image.jpg", Copies = 1 }], StartFromIndex = 0 };
 
-            bool res = await downloader.DownloadAsync(job, job.Photos[0], maxtries: 3, delay: 0);
+            DownloadResult res = await downloader.DownloadAsync(job, job.Photos[0], maxtries: 3, delay: 0);
 
-            Assert.False(res);
+            Assert.False(res.Success);
+            Assert.NotNull(res.Error);
             mock.Verify(m => m.GetObjectAsync(It.IsAny<GetObjectArgs>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
         }
 
@@ -128,9 +128,10 @@ namespace PrintSvc.tests.Storage
 
             Job job = new() { JobId = TestJobId, Photos = [new JobPhoto { PhotoStorageKey = storageKey, Copies = 1 }], StartFromIndex = 0 };
 
-            bool res = await downloader.DownloadAsync(job, job.Photos[0]);
+            DownloadResult res = await downloader.DownloadAsync(job, job.Photos[0]);
 
-            Assert.False(res);
+            Assert.False(res.Success);
+            Assert.NotNull(res.Error);
             mock.Verify(m => m.GetObjectAsync(It.IsAny<GetObjectArgs>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
@@ -149,9 +150,9 @@ namespace PrintSvc.tests.Storage
 
             Job job = new() { JobId = TestJobId, Photos = [new JobPhoto { PhotoStorageKey = storageKey, Copies = 1 }], StartFromIndex = 0 };
 
-            bool res = await downloader.DownloadAsync(job, job.Photos[0]);
+            DownloadResult res = await downloader.DownloadAsync(job, job.Photos[0]);
 
-            Assert.True(res);
+            Assert.True(res.Success);
 
             string tempFile = Path.Combine(TestTempDirectory, Path.GetFileName(storageKey));
             if (File.Exists(tempFile)) File.Delete(tempFile);

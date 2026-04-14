@@ -111,18 +111,63 @@ public class Worker : BackgroundService
 
         if (job != null)
         {
+            int totalToPrint = job.Photos.Skip(job.StartFromIndex).Sum(p => p.Copies);
+            int printed = 0;
+
             foreach (JobPhoto photo in job.Photos.Skip(job.StartFromIndex))
             {
                 bool res = await _downloader.DownloadAsync(job, photo, channel: channel);
 
                 if (res == true)
                 {
-                    SendDownloadedPhotoToPrinter(photo);
+                    try
+                    {
+                        SendDownloadedPhotoToPrinter(photo);
+                        printed += photo.Copies;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error while printing {PhotoStorageKey} for job {JobId}.", photo.PhotoStorageKey, job.JobId);
+
+                        Result result = CreateErrorResult(
+                            jobId: job.JobId,
+                            printed: printed,
+                            total: totalToPrint,
+                            error: $"Error while printing the photo: {Path.GetFileName(photo.PhotoStorageKey)}");
+
+                        await PublishResultAsync(channel, result);
+                        break;
+                    }
                 }
 
             }
         }
 
+    }
+
+    internal static Result CreateErrorResult(string jobId, int printed, int total, string error)
+    {
+        return new Result
+        {
+            JobId = jobId,
+            Status = "error",
+            Printed = printed,
+            Total = total,
+            Error = error
+        };
+    }
+
+    private async Task PublishResultAsync(IChannel channel, Result result)
+    {
+        await channel.QueueDeclareAsync(queue: _broker.ResultsQueue,
+                             durable: true,
+                             exclusive: false,
+                             autoDelete: false,
+                             arguments: null,
+                             cancellationToken: default);
+
+        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(result));
+        await channel.BasicPublishAsync("", _broker.ResultsQueue, body, cancellationToken: default);
     }
 
     private void SendDownloadedPhotoToPrinter(JobPhoto photo)

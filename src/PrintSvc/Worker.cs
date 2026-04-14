@@ -76,11 +76,18 @@ public class Worker : BackgroundService
             HostName = _broker.Host,
             Port = _broker.Port,
             UserName = _broker.Username,
-            Password = _broker.Password
+            Password = _broker.Password,
+            AutomaticRecoveryEnabled = true
         };
 
-        _connection = await factory.CreateConnectionAsync();
-        _channel = await _connection.CreateChannelAsync();
+        Task<IConnection> brokerTask = ConnectToBrokerAsync(factory, stoppingToken);
+        Task storageTask = WaitForStorageAsync(stoppingToken);
+        await Task.WhenAll(brokerTask, storageTask);
+
+        _connection = brokerTask.Result;
+        _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
+
+        _connection.ConnectionShutdownAsync += OnConnectionShutdownAsync;
 
         await _channel.QueueDeclareAsync(
             queue: _broker.JobsQueue,
@@ -119,6 +126,60 @@ public class Worker : BackgroundService
             if (_channel != null) await _channel.CloseAsync();
             if (_connection != null) await _connection.CloseAsync();
         }
+    }
+
+    private async Task<IConnection> ConnectToBrokerAsync(ConnectionFactory factory, CancellationToken ct)
+    {
+        int attempt = 0;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                IConnection connection = await factory.CreateConnectionAsync(ct);
+                _logger.LogInformation("Connected to broker.");
+                return connection;
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                attempt++;
+                int delay = ExponentialDelayMs(attempt);
+                _logger.LogError(ex, "Failed to connect to broker (attempt {Attempt}). Retrying in {Delay}ms.", attempt, delay);
+                await Task.Delay(delay, ct);
+            }
+        }
+    }
+
+    private async Task WaitForStorageAsync(CancellationToken ct)
+    {
+        int attempt = 0;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                await _downloader.PingAsync(ct);
+                _logger.LogInformation("Storage is available.");
+                return;
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                attempt++;
+                int delay = ExponentialDelayMs(attempt);
+                _logger.LogError(ex, "Failed to reach storage (attempt {Attempt}). Retrying in {Delay}ms.", attempt, delay);
+                await Task.Delay(delay, ct);
+            }
+        }
+    }
+
+    private static int ExponentialDelayMs(int attempt) =>
+        (int)Math.Min(1000 * Math.Pow(2, attempt - 1), 30_000);
+
+    private Task OnConnectionShutdownAsync(object sender, ShutdownEventArgs args)
+    {
+        if (args.Initiator != ShutdownInitiator.Application)
+            _logger.LogWarning("Broker connection lost: {Reason}. Automatic recovery in progress.", args.ReplyText);
+        return Task.CompletedTask;
     }
 
     private async Task Consumer_ReceivedAsync(object sender, BasicDeliverEventArgs @event)

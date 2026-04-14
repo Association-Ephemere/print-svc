@@ -157,5 +157,41 @@ namespace PrintSvc.tests.Storage
             string tempFile = Path.Combine(TestTempDirectory, Path.GetFileName(storageKey));
             if (File.Exists(tempFile)) File.Delete(tempFile);
         }
+
+        [Fact]
+        public async Task PingAsync_WhenBucketExists_DoesNotThrow()
+        {
+            var mock = new Mock<IMinioClient>();
+            mock.Setup(m => m.BucketExistsAsync(It.IsAny<BucketExistsArgs>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            var downloader = CreateDownloader(mock.Object);
+
+            await downloader.PingAsync();
+        }
+
+        [Fact]
+        public async Task PingAsync_WhenBucketDoesNotExist_Throws()
+        {
+            var mock = new Mock<IMinioClient>();
+            mock.Setup(m => m.BucketExistsAsync(It.IsAny<BucketExistsArgs>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+
+            var downloader = CreateDownloader(mock.Object);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => downloader.PingAsync());
+        }
+
+        [Fact]
+        public async Task PingAsync_WhenStorageUnreachable_Throws()
+        {
+            var mock = new Mock<IMinioClient>();
+            mock.Setup(m => m.BucketExistsAsync(It.IsAny<BucketExistsArgs>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new MinioException());
+
+            var downloader = CreateDownloader(mock.Object);
+
+            await Assert.ThrowsAsync<MinioException>(() => downloader.PingAsync());
+        }
     }
 }

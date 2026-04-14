@@ -67,4 +67,12 @@ public sealed class PhotoDownloader(
 
         return new DownloadResult(false, "Download failed."); // unreachable, satisfies compiler
     }
+
+    public async Task PingAsync(CancellationToken ct = default)
+    {
+        var args = new BucketExistsArgs().WithBucket(_storage.Bucket);
+        bool exists = await _client.BucketExistsAsync(args, ct);
+        if (!exists)
+            throw new InvalidOperationException($"Bucket '{_storage.Bucket}' does not exist or is not accessible.");
+    }
 }

@@ -34,9 +34,12 @@ public static class PrintTools
         short requestedCopies = checked((short)copies);
 
         using Image image = Image.FromFile(value.FullName);
-        (float orientedWidth, float orientedHeight) = GetOrientedPaperSize(image.Size, paperWidthInches, paperHeightInches);
 
-        using PrintDocument document = CreatePrintDocument(printerName, requestedCopies, orientedWidth, orientedHeight);
+        bool imageIsPortrait = image.Size.Height > image.Size.Width;
+        if (imageIsPortrait)
+            image.RotateFlip(RotateFlipType.Rotate90FlipNone);
+
+        using PrintDocument document = CreatePrintDocument(printerName, requestedCopies, paperWidthInches, paperHeightInches);
 
         document.PrintPage += (_, printEventArgs) =>
         {

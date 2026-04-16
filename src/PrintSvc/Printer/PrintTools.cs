@@ -9,7 +9,7 @@ namespace PrintSvc.Printer;
 public static class PrintTools
 {
 
-    public static void Print(
+    public static string Print(
         this FileInfo value,
         string? printerName = null,
         int copies = 1,
@@ -38,6 +38,9 @@ public static class PrintTools
 
         using PrintDocument document = CreatePrintDocument(printerName, requestedCopies, orientedWidth, orientedHeight);
 
+        string documentName = $"photo-{Guid.NewGuid():N}";
+        document.DocumentName = documentName;
+
         document.PrintPage += (_, printEventArgs) =>
         {
             if (printEventArgs.Graphics == null)
@@ -53,6 +56,7 @@ public static class PrintTools
         };
 
         document.Print();
+        return documentName;
     }
 
     internal static PrintDocument CreatePrintDocument(

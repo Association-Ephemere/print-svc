@@ -17,6 +17,7 @@
     <PackageReference Include="Minio" Version="7.0.0" />
     <PackageReference Include="RabbitMQ.Client" Version="7.2.1" />
     <PackageReference Include="System.Drawing.Common" Version="9.0.10" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
     <ItemGroup>

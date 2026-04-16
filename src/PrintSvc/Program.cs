@@ -1,5 +1,6 @@
 using Minio;
 using PrintSvc;
+using PrintSvc.Printer;
 using PrintSvc.Publisher;
 using PrintSvc.Settings;
 using PrintSvc.Storage;
@@ -16,6 +17,7 @@ builder.Services.Configure<PrintingSettings>(configuration.GetSection("Printing"
 
 builder.Services.AddSingleton<IResultPublisher, ResultPublisher>();
 builder.Services.AddSingleton<IPhotoDownloader, PhotoDownloader>();
+builder.Services.AddSingleton<IPrintQueueTracker, PrintQueueTracker>();
 
 
 var storageConfig = builder.Configuration.GetSection("Storage").Get<StorageSettings>()

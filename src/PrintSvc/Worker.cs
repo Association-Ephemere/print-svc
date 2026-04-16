@@ -19,9 +19,11 @@ public class Worker : BackgroundService
     private readonly ILogger<Worker> _logger;
     private readonly IPhotoDownloader _downloader;
     private readonly IResultPublisher _publisher;
+    private readonly IPrintQueueTracker _printQueueTracker;
 
     private IConnection? _connection;
     private IChannel? _channel;
+    private CancellationToken _stoppingToken;
 
     public Worker(
         IOptions<BrokerSettings> brokerOptions,
@@ -29,7 +31,8 @@ public class Worker : BackgroundService
         IOptions<PrintingSettings> printingOptions,
         ILogger<Worker> logger,
         IPhotoDownloader downloader,
-        IResultPublisher publisher)
+        IResultPublisher publisher,
+        IPrintQueueTracker printQueueTracker)
     {
         _broker = brokerOptions.Value;
         _storage = storageOptions.Value;
@@ -37,6 +40,7 @@ public class Worker : BackgroundService
         _logger = logger;
         _downloader = downloader;
         _publisher = publisher;
+        _printQueueTracker = printQueueTracker;
     }
 
     internal static Job? DeserializeJob(string message, ILogger<Worker>? logger = null)
@@ -67,6 +71,8 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _stoppingToken = stoppingToken;
+
         var factory = new ConnectionFactory
         {
             HostName = _broker.Host,
@@ -208,17 +214,17 @@ public class Worker : BackgroundService
         }
 
         await channel.BasicAckAsync(deliveryTag: @event.DeliveryTag, multiple: false);
-        await ProcessPhotosAsync(job, channel);
+        await ProcessPhotosAsync(job, channel, _stoppingToken);
     }
 
-    internal async Task ProcessPhotosAsync(Job job, IChannel channel)
+    internal async Task ProcessPhotosAsync(Job job, IChannel channel, CancellationToken ct = default)
     {
         int printed = job.StartFromIndex;
         bool hasError = false;
 
         foreach (JobPhoto photo in job.Photos.Skip(job.StartFromIndex))
         {
-            DownloadResult downloadResult = await _downloader.DownloadAsync(job, photo);
+            DownloadResult downloadResult = await _downloader.DownloadAsync(job, photo, ct: ct);
             if (!downloadResult.Success)
             {
                 hasError = true;
@@ -236,7 +242,7 @@ public class Worker : BackgroundService
             string tempPath = Path.Combine(_storage.TempDirectory, Path.GetFileName(photo.PhotoStorageKey));
             try
             {
-                SendDownloadedPhotoToPrinter(photo);
+                await SendDownloadedPhotoToPrinterAsync(photo, ct);
                 printed++;
 
                 await _publisher.PublishAsync(channel, new Result
@@ -287,17 +293,19 @@ public class Worker : BackgroundService
         };
     }
 
-    private void SendDownloadedPhotoToPrinter(JobPhoto photo)
+    private async Task SendDownloadedPhotoToPrinterAsync(JobPhoto photo, CancellationToken ct)
     {
         string fileName = Path.GetFileName(photo.PhotoStorageKey);
         string downloadedPhotoPath = Path.Combine(_storage.TempDirectory, fileName);
 
         _logger.LogInformation("Sending photo {FileName} to printer.", fileName);
 
-        new FileInfo(downloadedPhotoPath).Print(
+        string documentName = new FileInfo(downloadedPhotoPath).Print(
             _printing.PrinterName,
             photo.Copies,
             _printing.PaperWidthInches,
             _printing.PaperHeightInches);
+
+        await _printQueueTracker.WaitForCompletionAsync(documentName, ct);
     }
 }

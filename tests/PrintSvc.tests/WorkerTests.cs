@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using PrintSvc.Contracts;
+using PrintSvc.Printer;
 using PrintSvc.Publisher;
 using PrintSvc.Settings;
 using PrintSvc.Storage;
@@ -191,13 +192,21 @@ public class WorkerTests
         Assert.Equal(1, published[0].Total);
     }
 
-    private static Worker CreateWorker(IPhotoDownloader downloader, IResultPublisher publisher, string tempDir = "tmp") =>
-        new(
+    private static Worker CreateWorker(IPhotoDownloader downloader, IResultPublisher publisher, string tempDir = "tmp")
+    {
+        var mockTracker = new Mock<IPrintQueueTracker>();
+        mockTracker
+            .Setup(t => t.WaitForCompletionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        return new Worker(
             Options.Create(new BrokerSettings { ResultsQueue = "print.status" }),
             Options.Create(new StorageSettings { TempDirectory = tempDir }),
             Options.Create(new PrintingSettings { PrinterName = "", PaperWidthInches = 6f, PaperHeightInches = 4f }),
             NullLogger<Worker>.Instance,
             downloader,
-            publisher
+            publisher,
+            mockTracker.Object
         );
+    }
 }
